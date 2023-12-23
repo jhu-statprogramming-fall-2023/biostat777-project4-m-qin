@@ -4,4 +4,4 @@
 
 **Created**: December 22, 2023
 
-**Link to deployed dashboard**: TBD
+**Link to deployed dashboard**: https://ia4era-michelle-qin.shinyapps.io/baltimore-vehicular-access/
