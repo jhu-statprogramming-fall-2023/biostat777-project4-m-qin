@@ -1,0 +1,220 @@
+---
+title: "Visualizing Baltimore Workers' Access to Vehicles"
+author: "Michelle Qin"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: cerulean
+    source_code: embed
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+```
+
+# About
+
+## Column 1 {data-width=400} {align=center}
+
+<font size="4">**Background**</font>
+
+This dashboard visualizes access to vehicles among workers aged 16+ in Baltimore City, Maryland. The motivation for this project is to explore whether workers' access to a vehicle has any spatial patterns across Baltimore, perhaps relating to public transit lines or socioeconomic status.
+
+Census tract data from the U.S. Census Bureau’s [American Community Survey (ACS)](https://www.census.gov/programs-surveys/acs/technical-documentation/table-shells.2022.html) are downloaded using the [tidycensus](https://walker-data.com/census-r/an-introduction-to-tidycensus.html) package in R.
+
+
+## Column 2 {data-width=600} {align=center}
+
+<font size="4">**Video Tutorial for This Dashboard**</font>
+
+[![IMAGE_ALT](https://img.youtube.com/vi/6839BZ7AZWA/0.jpg)](https://youtu.be/6839BZ7AZWA)
+
+<!-- <iframe> -->
+<!--     width="50" -->
+<!--     height="50" -->
+<!--     src="https://youtu.be/6839BZ7AZWA" -->
+<!--     frameborder="0" -->
+<!--     allow="autoplay; encrypted-media" -->
+<!--     allowfullscreen -->
+<!-- </iframe> -->
+
+
+# The Data {data-orientation=rows}
+
+## Row 1 {data-height=200}
+
+**Data Description**
+
+This dashboard pulls a few variables from the 2022 [American Community Survey (ACS)](https://www.census.gov/programs-surveys/acs/technical-documentation/table-shells.2022.html), filtered to Baltimore City, Maryland. The variables pulled are the number of workers aged 16+ in each census tract with access to 0, 1, 2, or 3 or more vehicles, respectively, as well as the total number of workers aged 16+. The original data source also contains the margins of error (MOE) for these estimates, though for the purposes of this dashboard, only the point estimates will be shown.
+
+## Row 2 {.tabset .tabset-fade}
+
+### Baltimore City
+
+```{r load-data, message = F}
+library(tidyverse)
+library(tidycensus)
+library(DT)
+library(shiny)
+
+if (!dir.exists("data")){
+  dir.create("data")
+}
+
+variables_of_interest <- c("B08141_001", "B08141_002", "B08141_003", "B08141_004", "B08141_005")
+
+if (file.exists("data/Baltimore_2022ACS_B08141.csv")){
+  vehicle_data <- read_csv(file = "data/Baltimore_2022ACS_B08141.csv") %>%
+    filter(variable %in% variables_of_interest)
+}
+
+if (!file.exists("data/Baltimore_2022ACS_B08141.csv")){
+  vehicle_data <- get_acs(geography = "tract",
+                          state = "MD",
+                          county = "Baltimore city",
+                          year = 2022,
+                          variables = variables_of_interest) %>%
+    select(-c(NAME)) # GEOID includes information contained in NAME
+  write_csv(vehicle_data, file = "data/Baltimore_2022ACS_B08141.csv")
+}
+
+vehicle_data_relabeled <- vehicle_data %>%
+  mutate(label = case_when(label == "Total:" ~ "Total workers aged 16+",
+                           label == "No vehicle available" ~ "0 vehicles available",
+                           label == "3 or more vehicles available" ~ "3+ vehicles available",
+                           .default = label)) %>%
+  select(GEOID, label, estimate) %>%
+  rename(`Census Tract` = GEOID, Variable = label, Estimate = estimate)
+
+vehicle_access_baltimore <- vehicle_data_relabeled %>%
+  summarize(Estimate = sum(Estimate), .by = Variable)
+```
+
+```{r view-city-data}
+DT::renderDataTable({
+  DT::datatable(vehicle_access_baltimore,
+                rownames = F,
+                caption = htmltools::tags$caption(
+                  style = 'caption-side: top; text-align: Left;'),
+                options = list(autoWidth = TRUE,
+                               pageLength = 10,
+                               scroller = TRUE,
+                               scrollY = '450px'))
+})
+```
+
+### Census Tracts within Baltimore City
+
+```{r view-tract-data}
+DT::renderDataTable({
+  DT::datatable(vehicle_data_relabeled,
+                rownames = F,
+                caption = htmltools::tags$caption(
+                  style = 'caption-side: top; text-align: Left;'),
+                options = list(autoWidth = TRUE,
+                               pageLength = 10,
+                               scroller = TRUE,
+                               scrollY = '450px'))
+})
+```
+
+
+# Analysis
+
+## Column 1
+
+**Analysis Overview**
+
+The bar chart and pie chart to the right visualize the overall distribution of vehicular access among workers aged 16+ in Baltimore City in 2022. They show that most workers had access to 1 or 2 vehicles.
+
+## Column 2 {.tabset .tabset-fade}
+
+<!-- ### Baltimore City {.tabset .tabset-fade} -->
+<!-- ### Overall Distribution of Vehicular Access in Baltimore City -->
+
+### Bar Chart
+
+```{r city-barchart}
+library(ggplot2)
+library(scales)
+
+ggplot(vehicle_access_baltimore %>% filter(Variable != "Total workers aged 16+")) +
+  geom_col(aes(y = Estimate, x = Variable, fill = Variable)) +
+  scale_y_continuous(label=comma) +
+  scale_x_discrete(labels = NULL, breaks = NULL) +
+  labs(title = "Vehicular Access of All Baltimore Workers Aged 16+", x = "", y = "Estimated Number of Workers") +
+  theme_bw()
+```
+
+### Pie Chart
+
+```{r city-piechart}
+library(ggplot2)
+library(scales)
+
+ggplot(vehicle_access_baltimore %>%
+         filter(Variable != "Total workers aged 16+"),
+       aes(x = "", y = Estimate, fill = Variable)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  scale_y_continuous(label=comma) +
+  labs(title = "Vehicular Access of All Baltimore Workers Aged 16+", x = "", y = "Estimated Number of Workers") +
+  theme_bw()
+```
+
+# Map of Census Tracts
+
+## Column 1
+
+**Analysis Overview**
+
+The map to the right shows workers' access vehicles in each census tract in Baltimore City in 2022, broken down by the percentage of workers who had access to 0, 1, 2, or 3 or more vehicles, respectively. Looking at the map of 0 vehicles available versus the map of 3 or more vehicles available, a spatial pattern can definitely be detected, possibly relating to Baltimore City's history of racial and economic segregation. A useful extension of this dashboard would be to map public transit lines for comparison.
+
+## Column 2
+
+**Census Tracts within Baltimore City**
+<!-- ### Vehicular Access in Census Tracts across Baltimore City -->
+
+```{r tract-maps}
+library(tidyverse)
+library(tigris)
+library(ggplot2)
+library(scales)
+library(viridis)
+
+vehicle_access <- vehicle_data_relabeled %>%
+  pivot_wider(id_cols = `Census Tract`, names_from = Variable, values_from = Estimate) %>%
+  mutate(proportion_no_vehicles = `0 vehicles available` / `Total workers aged 16+`,
+         proportion_1_vehicle = `1 vehicle available` / `Total workers aged 16+`,
+         proportion_2_vehicles = `2 vehicles available` / `Total workers aged 16+`,
+         proportion_3plus_vehicles = `3+ vehicles available` / `Total workers aged 16+`) %>%
+  rename(GEOID = `Census Tract`)
+
+tracts_info <- tigris::tracts(state = "MD", county = "Baltimore city", year = 2022)
+geometries <- subset(tracts_info, select = c("GEOID", "geometry"))
+
+vehicle_access_with_geometry <- merge(geometries, vehicle_access, by = "GEOID")
+
+vehicle_access_with_geometry_concise <- vehicle_access_with_geometry %>%
+    select(proportion_no_vehicles, proportion_1_vehicle, proportion_2_vehicles, proportion_3plus_vehicles, geometry) %>%
+    pivot_longer(cols = c(proportion_no_vehicles, proportion_1_vehicle, proportion_2_vehicles, proportion_3plus_vehicles), names_to = "Variable")
+
+selectInput(inputId = "variable",
+              label = "Select which variable to visualize:",
+              choices = list("Workers with 0 vehicles available" = "proportion_no_vehicles",
+                             "Workers with 1 vehicles available" = "proportion_1_vehicle",
+                             "Workers with 2 vehicles available" = "proportion_2_vehicles",
+                             "Workers with 3+ vehicles available" = "proportion_3plus_vehicles"))
+
+renderPlot({
+  ggplot(vehicle_access_with_geometry_concise %>% filter(Variable == input$variable)) +
+  geom_sf(aes(geometry = geometry, fill = value)) +
+  scale_fill_viridis(labels = label_percent()) +
+  labs(fill = "Percent of Workers Aged 16+") +
+  theme_bw()
+})
+```
+
+
